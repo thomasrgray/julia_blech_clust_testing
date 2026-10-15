@@ -154,6 +154,28 @@ class TestTasteNames:
         assert lfp_common.get_taste_names_in_lfp_order(dat) == [
             "sucrose", "water", "salt"]
 
+    def test_legacy_info_maps_numeric_dig_ins(self, tmp_path):
+        dat = self.make_dat(
+            tmp_path,
+            ["DIN_1_LFPs", "DIN_10_LFPs", "DIN_2_LFPs"],
+            [], [])
+        # Older experiment-info files store the numbers instead of names.
+        dat.get_info_dict = lambda: setattr(dat, "info_dict", {
+            "taste_params": {
+                "dig_in_nums": [1, 2, 10],
+                "tastes": ["water", "salt", "sucrose"]}})
+        assert lfp_common.get_taste_names_in_lfp_order(dat) == [
+            "water", "sucrose", "salt"]
+
+    def test_legacy_info_maps_dig_in_node_names(self, tmp_path):
+        dat = self.make_dat(
+            tmp_path, ["dig_in_0_LFPs", "dig_in_1_LFPs"], [], [])
+        dat.get_info_dict = lambda: setattr(dat, "info_dict", {
+            "taste_params": {
+                "dig_in_nums": [0, 1], "tastes": ["water", "salt"]}})
+        assert lfp_common.get_taste_names_in_lfp_order(dat) == [
+            "water", "salt"]
+
     def test_unknown_dig_in_raises(self, tmp_path):
         dat = self.make_dat(
             tmp_path, ["DIN_9_LFPs"], ["DIN_1"], ["water"])
