@@ -545,3 +545,28 @@ class TestLegacyDigInNameMap:
         data.create_dig_in_name_map()
 
         assert data.dig_in_name_map == {"DIN_0": "BA", "DIN_2": "oIA"}
+
+
+class TestParsedLfpNodeLoading:
+    def test_get_lfps_loads_dig_in_named_arrays(self, tmp_path):
+        import tables
+
+        hdf5_path = tmp_path / "data.h5"
+        with tables.open_file(str(hdf5_path), "w") as hf5:
+            parsed_lfp = hf5.create_group("/", "Parsed_LFP")
+            hf5.create_array(
+                parsed_lfp, "dig_in_0_LFPs", np.ones((2, 3, 4)))
+            hf5.create_array(
+                parsed_lfp, "dig_in_1_LFPs", np.ones((2, 3, 4)) * 2)
+
+        data = ephys_data.__new__(ephys_data)
+        data.hdf5_path = str(hdf5_path)
+        data.check_file_type = lambda: True
+        data.extract_lfps = lambda: (_ for _ in ()).throw(
+            AssertionError("existing parsed LFP arrays should be reused"))
+
+        data.get_lfps()
+
+        assert len(data.lfp_array_list) == 2
+        assert data.lfp_array_list[0].shape == (3, 2, 4)
+        assert data.all_lfp_array.shape == (2, 6, 4)
