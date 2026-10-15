@@ -35,6 +35,7 @@ Where the data come from (nothing here reads trial_info_frame.csv directly):
 
 import json
 import os
+import re
 
 import numpy as np
 import tables
@@ -224,12 +225,28 @@ def get_taste_names_in_lfp_order(dat):
     """
     dat.get_info_dict()
     taste_params = dat.info_dict["taste_params"]
-    if "dig_in_names" not in taste_params:
+    tastes = taste_params.get("tastes", [])
+    dig_in_names = taste_params.get("dig_in_names")
+    dig_in_nums = taste_params.get("dig_in_nums")
+    if dig_in_names is not None:
+        if len(dig_in_names) != len(tastes):
+            raise ValueError(
+                "The .info file has different numbers of dig-in names and "
+                "tastes")
+        taste_by_dig_in = dict(zip(dig_in_names, tastes))
+    elif dig_in_nums is not None:
+        if len(dig_in_nums) != len(tastes):
+            raise ValueError(
+                "The .info file has different numbers of dig-in numbers and "
+                "tastes")
+        taste_by_dig_in_num = {
+            int(dig_in_num): taste
+            for dig_in_num, taste in zip(dig_in_nums, tastes)}
+    else:
         raise ValueError(
-            "The .info file has no taste_params['dig_in_names'], so parsed "
-            "LFP arrays cannot be matched to tastes. Re-run blech_exp_info.")
-    taste_by_dig_in = dict(zip(
-        taste_params["dig_in_names"], taste_params["tastes"]))
+            "The .info file has neither taste_params['dig_in_names'] nor "
+            "taste_params['dig_in_nums']; parsed LFP arrays cannot be "
+            "matched to tastes. Re-run blech_exp_info.")
 
     with tables.open_file(dat.hdf5_path, "r") as hf5:
         node_names = [node._v_name for node in hf5.list_nodes("/Parsed_LFP")
@@ -243,11 +260,27 @@ def get_taste_names_in_lfp_order(dat):
     for node_name in node_names:
         dig_in_name = (node_name[:-len("_LFPs")]
                        if node_name.endswith("_LFPs") else node_name)
-        if dig_in_name not in taste_by_dig_in:
-            raise ValueError(
-                f"Parsed LFP node {node_name!r} has no matching taste in the "
-                f".info file (known dig-ins: {sorted(taste_by_dig_in)})")
-        taste_names.append(taste_by_dig_in[dig_in_name])
+        if dig_in_names is not None:
+            if dig_in_name not in taste_by_dig_in:
+                raise ValueError(
+                    f"Parsed LFP node {node_name!r} has no matching taste in "
+                    f"the .info file (known dig-ins: "
+                    f"{sorted(taste_by_dig_in)})")
+            taste_names.append(taste_by_dig_in[dig_in_name])
+        else:
+            match = re.search(r"(?:DIN|dig_in)_?(\d+)", dig_in_name,
+                              flags=re.IGNORECASE)
+            if match is None:
+                raise ValueError(
+                    f"Cannot read a numeric dig-in ID from parsed LFP node "
+                    f"{node_name!r}")
+            dig_in_num = int(match.group(1))
+            if dig_in_num not in taste_by_dig_in_num:
+                raise ValueError(
+                    f"Parsed LFP node {node_name!r} has no matching taste in "
+                    f"the .info file (known dig-in numbers: "
+                    f"{sorted(taste_by_dig_in_num)})")
+            taste_names.append(taste_by_dig_in_num[dig_in_num])
     return taste_names
 
 
