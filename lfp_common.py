@@ -249,8 +249,10 @@ def get_taste_names_in_lfp_order(dat):
             "matched to tastes. Re-run blech_exp_info.")
 
     with tables.open_file(dat.hdf5_path, "r") as hf5:
-        node_names = [node._v_name for node in hf5.list_nodes("/Parsed_LFP")
-                      if "DIN" in node.__str__()]
+        node_names = [
+            node._v_name for node in hf5.list_nodes("/Parsed_LFP")
+            if node._v_name.endswith("_LFPs")
+            or node._v_name.startswith("DIN")]
     if len(node_names) != len(dat.lfp_array_list):
         raise ValueError(
             f"Found {len(node_names)} parsed LFP dig-ins but "
