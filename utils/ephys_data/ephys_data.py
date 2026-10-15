@@ -819,16 +819,26 @@ class ephys_data():
         if not self.check_file_type():
             return
 
-        with tables.open_file(self.hdf5_path, 'r+') as hf5:
+        with tables.open_file(self.hdf5_path, 'r') as hf5:
+            lfp_nodes_exist = (
+                '/Parsed_LFP' in hf5
+                and any(node._v_name.endswith('_LFPs')
+                        or node._v_name.startswith('DIN')
+                        for node in hf5.list_nodes('/Parsed_LFP')))
 
-            if ('/Parsed_LFP' not in hf5) or (re_extract == True):
-                print(
-                    'Parsed LFPs not found in HDF5 or re-extract requested...Extracting')
-                self.extract_lfps()
+        if not lfp_nodes_exist or re_extract:
+            print(
+                'Parsed LFP arrays not found in HDF5 or re-extract requested...Extracting')
+            self.extract_lfps()
 
         with tables.open_file(self.hdf5_path, 'r+') as hf5:
             lfp_nodes = [node for node in hf5.list_nodes('/Parsed_LFP')
-                         if 'DIN' in node.__str__()]
+                         if node._v_name.endswith('_LFPs')
+                         or node._v_name.startswith('DIN')]
+            if not lfp_nodes:
+                raise ValueError(
+                    "No parsed LFP arrays found in /Parsed_LFP after "
+                    "extraction; expected node names ending in '_LFPs'.")
             # Account for parsed LFPs being different
             self.lfp_array_list = trial_arrays = [
                 # trials × electrodes × samples
