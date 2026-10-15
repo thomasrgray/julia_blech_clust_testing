@@ -40,15 +40,15 @@ import re
 import numpy as np
 import tables
 
-# The blech_clust modules are imported here once and re-exported, so the
-# scripts import them from lfp_common. Inside the repository directory the
-# package may only be importable as "utils".
+# Prefer the modules in this checkout. A conda environment cloned from another
+# blech_clust version may also have an installed ``blech_clust`` package, and
+# using that package here can silently bypass this repository's LFP changes.
 try:
+    import utils.ephys_data.ephys_data as ephys_data
+    from utils.ephys_data import lfp_processing
+except ModuleNotFoundError:
     import blech_clust.utils.ephys_data.ephys_data as ephys_data
     from blech_clust.utils.ephys_data import lfp_processing
-except ModuleNotFoundError:
-    import utils.ephys_data.ephys_data as ephys_data  # noqa: F401
-    from utils.ephys_data import lfp_processing  # noqa: F401
 
 # Defaults for the command-line options of every script. Override them with
 # --data-list / --output-dir; edit them here to change the defaults for all
