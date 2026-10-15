@@ -652,10 +652,26 @@ class ephys_data():
             print('Info dict not found in attributes...Loading')
             self.get_info_dict()
 
-        taste_dig_ins = self.info_dict['taste_params']['dig_in_names']
-        taste_names = self.info_dict['taste_params']['tastes']
-        self.dig_in_name_map = {dig_in: taste for dig_in,
-                                taste in zip(taste_dig_ins, taste_names)}
+        taste_params = self.info_dict['taste_params']
+        taste_names = taste_params['tastes']
+        taste_dig_ins = taste_params.get('dig_in_names')
+
+        # Older .info files store numeric IDs instead of dig-in names.
+        # Recreate the canonical HDF5/spike-train names used by this module.
+        if taste_dig_ins is None:
+            dig_in_nums = taste_params.get('dig_in_nums')
+            if dig_in_nums is None:
+                raise ValueError(
+                    "taste_params must contain either 'dig_in_names' or "
+                    "'dig_in_nums' to map digital inputs to tastes")
+            taste_dig_ins = [
+                f"dig_in_{int(dig_in_num)}" for dig_in_num in dig_in_nums]
+
+        if len(taste_dig_ins) != len(taste_names):
+            raise ValueError(
+                "taste_params dig-in IDs/names and tastes have different "
+                "lengths")
+        self.dig_in_name_map = dict(zip(taste_dig_ins, taste_names))
 
     def get_spikes(self):
         """Extract spike arrays from HDF5 file
