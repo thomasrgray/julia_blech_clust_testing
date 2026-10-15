@@ -517,3 +517,31 @@ class TestEphysDataStaticMethods:
 
                 assert non_stacking_message_found, "Non-stacking message not found"
                 assert attributes_message_found, "Attributes message not found"
+
+
+class TestLegacyDigInNameMap:
+    def test_numeric_dig_in_ids_make_canonical_names(self):
+        data = ephys_data.__new__(ephys_data)
+        data.info_dict = {"taste_params": {
+            "dig_in_nums": [0, 2, 10],
+            "tastes": ["BA", "oIA", "BK"],
+        }}
+
+        data.create_dig_in_name_map()
+
+        assert data.dig_in_name_map == {
+            "dig_in_0": "BA",
+            "dig_in_2": "oIA",
+            "dig_in_10": "BK",
+        }
+
+    def test_existing_dig_in_names_are_preserved(self):
+        data = ephys_data.__new__(ephys_data)
+        data.info_dict = {"taste_params": {
+            "dig_in_names": ["DIN_0", "DIN_2"],
+            "tastes": ["BA", "oIA"],
+        }}
+
+        data.create_dig_in_name_map()
+
+        assert data.dig_in_name_map == {"DIN_0": "BA", "DIN_2": "oIA"}
