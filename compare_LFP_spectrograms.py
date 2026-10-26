@@ -3,7 +3,6 @@
 import argparse
 import itertools
 import json
-import re
 from pathlib import Path
 
 import matplotlib
@@ -11,6 +10,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import ndimage, stats
+from lfp_session_labels import animal_for_session
 
 ROUTES = {"retro": ("BA", "IA", "S"), "ortho": ("BK", "oIA", "oBA")}
 N_CONTRASTS = 18  # six regional + four groups of three pairwise contrasts
@@ -25,17 +25,6 @@ def figure_specs():
         for route, tastes in ROUTES.items():
             specs.append((f"{region}_{route}", [(region, t) for t in tastes]))
     return specs
-
-
-def animal_for_session(session, mapping):
-    if session in mapping:
-        if not str(mapping[session]).strip():
-            raise ValueError(f"Empty animal ID for {session}")
-        return str(mapping[session])
-    matches = re.findall(r"(?:^|_)(TG\d+)(?=_|$)", session, re.I)
-    if len(matches) != 1:
-        raise ValueError(f"Cannot determine animal for {session}; supply --animal-map")
-    return matches[0].upper()
 
 
 def paired_animals(region_data, conditions, mapping):
@@ -185,28 +174,44 @@ def main():
     from grand_average_LFP import collect_session
     from lfp_common import (get_dataset_dirs, DEFAULT_DATA_LIST,
                             PLOT_MAX_FREQ_HZ, SPECTROGRAM_START_MS, SPECTROGRAM_END_MS)
-    paths = get_dataset_dirs(args.dataset, args.data_list or DEFAULT_DATA_LIST)
+    paths = [str(Path(p).expanduser()) for p in
+             get_dataset_dirs(args.dataset, args.data_list or DEFAULT_DATA_LIST)]
     names = [Path(p).name for p in paths]
     if len(names) != len(set(names)):
         parser.error("Session basenames must be unique; remove duplicate datasets")
     mapping = json.loads(Path(args.animal_map).read_text()) if args.animal_map else {}
-    animal_map = {s: animal_for_session(s, mapping) for s in names}
+    animal_map = {s: animal_for_session(path, mapping) for s, path in zip(names, paths)}
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
         parser.error("Use a new/empty output directory to avoid stale results")
     reference = {"freq": None, "relative_time": None}
     region_data = {}
+    report = {"settings": vars(args), "animal_map": animal_map, "figures": {},
+              "family_size": N_CONTRASTS, "unit": "animal", "excluded_dc": True,
+              "dataset_paths": paths, "session_audit": {}}
     for path, name in zip(paths, names):
-        # Collect transactionally; fail rather than silently omit a bad session.
         session_data = {}
-        collect_session(path, session_data, reference)
+        audit = {"data_dir": path, "animal": animal_map[name]}
+        report["session_audit"][name] = audit
+        try:
+            collect_session(path, session_data, reference, audit=audit)
+        except Exception as error:
+            audit.update(status="failed", reason=str(error))
+            (output / "statistics.json").write_text(json.dumps(report, indent=2))
+            raise
+        (output / "statistics.json").write_text(json.dumps(report, indent=2))
         if not session_data:
-            raise ValueError(f"No usable summaries for {name}; review QC/axis mismatch")
+            if audit.get("status") == "excluded":
+                print(f"Excluded {name}: {audit['reason']}", flush=True)
+                continue
+            raise ValueError(f"No usable summaries or documented exclusion for {name}")
         for key, entry in session_data.items():
             target = region_data.setdefault(key, {k: [] for k in entry})
             for field, values in entry.items():
                 target[field].extend(values)
+    if not region_data:
+        raise SystemExit("No sessions passed QC; inspect statistics.json/session_audit")
     freq, time = reference["freq"], reference["relative_time"]
     fm = (freq > 0) & (freq <= PLOT_MAX_FREQ_HZ)
     tm = (time >= SPECTROGRAM_START_MS/1000 - 1e-9) & (time <= SPECTROGRAM_END_MS/1000 + 1e-9)
@@ -214,9 +219,6 @@ def main():
     test_mask = (time >= args.test_start - 1e-9) & (time <= args.test_end + 1e-9)
     if len(freq) < 2 or test_mask.sum() < 2 or args.test_start < time[0]-1e-9 or args.test_end > time[-1]+1e-9:
         raise ValueError("Requested test window must fit the displayed STFT grid")
-    report = {"settings": vars(args), "animal_map": animal_map, "figures": {},
-              "family_size": N_CONTRASTS, "unit": "animal", "excluded_dc": True,
-              "dataset_paths": paths}
     for name, conditions in figure_specs():
         print(f"Comparing {name}", flush=True)
         arrays, animals, sessions, excluded = paired_animals(region_data, conditions, animal_map)

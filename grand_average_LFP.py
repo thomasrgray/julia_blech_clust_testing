@@ -16,8 +16,8 @@ trials and channels, and the mean baseline / post-stimulus power per
 frequency. Sessions are combined by averaging those per-session values, so
 every session counts equally whatever its number of trials or channels.
 
-Tastes are combined across sessions by taste NAME (as written in each .info
-file), so the same taste must be spelled the same way in every session; any
+Tastes are combined across sessions by canonical taste NAME. The confirmed
+legacy waterIA/waterBA convention is translated by lfp_session_labels; any
 number of tastes can be present, and a taste missing from some sessions is
 averaged over the sessions that have it (the session count is shown in each
 panel title). Sessions whose STFT time/frequency axes differ from the first
@@ -55,6 +55,7 @@ from lfp_common import (
     summarize_normalized_power,
 )
 from validate_LFP_data import validate_dataset
+from lfp_session_labels import canonicalize_stimulus_names
 
 # Regions named differently in different sessions can be merged here:
 # {name found in the .info file (any capitalisation): name to use}. Leave it
@@ -82,7 +83,7 @@ def get_approved_regions(data_dir):
     }
 
 
-def collect_session(data_dir, region_data, reference):
+def collect_session(data_dir, region_data, reference, audit=None):
     """Add one session's per-region, per-taste summaries to region_data.
 
     region_data maps (region, taste name) to lists with one entry per
@@ -96,11 +97,28 @@ def collect_session(data_dir, region_data, reference):
     # drops tastes excluded in remove_lfp_artifacts.py).
     dat = ephys_data.ephys_data(data_dir)
     dat.get_lfps()
-    taste_names = get_taste_names_in_lfp_order(dat)
+    raw_taste_names = get_taste_names_in_lfp_order(dat)
+    taste_names = canonicalize_stimulus_names(raw_taste_names)
+    if audit is not None:
+        audit["stimulus_names"] = dict(zip(raw_taste_names, taste_names))
+    for raw, canonical in zip(raw_taste_names, taste_names):
+        if raw != canonical:
+            print(f"  Stimulus label: {raw} -> {canonical}")
     timing = get_lfp_epoch_timing(dat)
     load_cleaned_lfps(dat, data_dir, taste_names)
     if not dat.lfp_array_list:
+        if audit is not None:
+            audit.update(status="excluded", reason="all tastes excluded by artifact removal")
         print(f"Skipping {dataset}: all tastes are excluded")
+        return
+
+    approved_regions = get_approved_regions(data_dir)
+    if audit is not None:
+        audit["approved_channel_counts"] = {r: len(c) for r, c in approved_regions.items()}
+    if not any(len(channels) for channels in approved_regions.values()):
+        if audit is not None:
+            audit.update(status="excluded", reason="no approved LFP channels in any region")
+        print(f"Skipping {dataset}: no approved LFP channels in any region")
         return
 
     # Step 2: STFT of the full epoch, calculated in memory only.
@@ -117,15 +135,12 @@ def collect_session(data_dir, region_data, reference):
           or not np.allclose(dat.freq_vec, reference["freq"])
           or len(relative_time) != len(reference["relative_time"])
           or not np.allclose(relative_time, reference["relative_time"])):
-        print(f"Skipping {dataset}: its STFT time/frequency axes differ from "
-              f"the first session's (different epoch length or sampling "
-              f"rate), so it cannot be averaged with the others")
-        return
+        raise ValueError(f"{dataset}: STFT time/frequency axes differ from the first session")
 
     # Step 4: Per region, summarize each taste. A taste name can appear more
     # than once in a session (several dig-ins for one taste); those trials
     # are pooled.
-    for region, channels in get_approved_regions(data_dir).items():
+    for region, channels in approved_regions.items():
         if len(channels) == 0:
             print(f"  Skipping {region}: no approved LFP channels")
             continue
@@ -150,6 +165,9 @@ def collect_session(data_dir, region_data, reference):
             entry["pre"].append(summary["pre_power"])
             entry["post"].append(summary["post_power"])
             entry["sessions"].append(dataset)
+
+    if audit is not None:
+        audit["status"] = "included"
 
 
 def save_figure(fig, base, dpi):
