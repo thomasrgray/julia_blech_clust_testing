@@ -91,7 +91,11 @@ def test_main_integration_ten_figures(monkeypatch, tmp_path):
     import json
     import sys
     from compare_LFP_spectrograms import main
-    def collect(path, data, reference):
+    def collect(path, data, reference, audit=None):
+        if path == "a_TG3_x":
+            audit.update(status="excluded", reason="no approved LFP channels in any region")
+            return
+        audit["status"] = "included"
         reference['freq'] = np.arange(0., 5.)
         reference['relative_time'] = np.linspace(-1, 1.75, 12)
         rng = np.random.default_rng(int(path.split('_')[1][2:]))
@@ -105,10 +109,12 @@ def test_main_integration_ten_figures(monkeypatch, tmp_path):
         PLOT_MAX_FREQ_HZ=35, SPECTROGRAM_START_MS=-1000, SPECTROGRAM_END_MS=1750))
     out = tmp_path / 'output'
     monkeypatch.setattr(sys, 'argv', ['compare_LFP_spectrograms.py', '--dataset',
-                                    'a_TG1_x', '--dataset', 'a_TG2_x',
+                                    'a_TG1_x', '--dataset', 'a_TG2_x', '--dataset', 'a_TG3_x',
                                     '--output-dir', str(out)])
     main()
     assert len(list(out.glob('*.png'))) == 10
     assert len(list(out.glob('*.npz'))) == 18
     report = json.loads((out/'statistics.json').read_text())
     assert all(f['status']=='tested' for f in report['figures'].values())
+    assert report['session_audit']['a_TG3_x']['status'] == 'excluded'
+    assert report['session_audit']['a_TG1_x']['status'] == 'included'

@@ -24,8 +24,14 @@ No new dependencies beyond NumPy, SciPy, Matplotlib and the existing LFP pipelin
 These are **18 pairwise tests in 10 figures**. The four within-region figures
 compare stimuli *within* a route, as requested; they are not direct matched-odor
 ortho-versus-retro tests. S and BK are included in the specified groups without
-assuming they are a chemically matched pair. Stimulus names must exactly match
-the `.info` names above; GC/PC region names are case insensitive.
+assuming they are a chemically matched pair. GC/PC region names are case insensitive. For the confirmed legacy convention,
+`waterIA`/`waterBA` become retro `IA`/`BA`, and accompanying plain `IA`/`BA` become
+ortho `oIA`/`oBA`. Mapping is simultaneous and only activates for an odor when
+its `water` label is present. Already canonical sessions are unchanged. Distinct
+source names that would collide cause an error instead of pooling routes.
+This translation applies to grand averages, individual-session plots, and
+statistical comparisons; source metadata and cleaned trials are unchanged.
+The statistical audit stores original-to-canonical names for each session.
 
 ## Run
 
@@ -49,10 +55,14 @@ python compare_LFP_spectrograms.py \
 ```
 
 Alternatively repeat `--dataset /absolute/session/path` to select sessions.
-Session basenames must be unique. Names such as
+Session basenames must be unique. The full input path is searched for animal IDs.
+Thus `/media/thomas/Data/TG25/D1_retroortho2_260311_155032` identifies **TG25**
+even though its basename has no animal ID. Names such as
 `Feb2_OrthoRetro_TG22_260202_170014` identify animal **TG22**, so all TG22 sessions
 are averaged within that animal. Verify the resolved mapping in `statistics.json`.
-For other naming schemes, or to override an ID, use `--animal-map animals.json`:
+Conflicting parent/basename animal IDs cause an error. For other naming schemes,
+or to override an ID, use `--animal-map animals.json` (keys may be session
+basenames or full input paths):
 
 ```json
 {
@@ -125,15 +135,22 @@ bin in its outline [3]. No significant cluster is not evidence of equivalence.
   Condition maps share a symmetric color scale within a figure; differences
   share their own symmetric scale. Red means positive, blue negative.
 - `statistics.json`: settings, resolved animal IDs, retained sessions per animal,
-  exclusions, cluster masses/directions/p values, permutation counts, exact versus
+  exclusions, per-session approved channel counts and label mappings,
+  cluster masses/directions/p values, permutation counts, exact versus
   Monte Carlo status, and smallest attainable family p for each comparison.
 - Eighteen NPZs: paired animal differences, animal IDs, axes, test mask, t maps,
   family-corrected cluster p maps, full-display significance masks, and null maxima.
   `t` and `p_family` cover only tested time bins; `animal_difference` and
   `significant` cover the displayed window. Bins outside clusters have p = 1.
 
-Load/QC failures and incompatible STFT axes stop the run rather than silently
-excluding a failed recording. Fewer than two complete animals produces an
+Sessions with no approved channels, or with all tastes excluded by artifact
+removal, are skipped with an explicit reason in `statistics.json/session_audit`.
+Their channels are not reinstated and thresholds are not relaxed. Other load/QC
+errors and incompatible STFT axes stop the run and record the failure. Inspect
+`LFP_channel_check/lfp_validation_report.json` in an excluded session to review
+its channel rejection reasons. If every session is excluded, the run stops
+with the audit saved. Grand averages also skip sessions with no approved channels
+before computing their STFT. Fewer than two complete animals produces an
 explicit untested entry, no inferential figure for that group, and a nonzero exit
 status after processing other groups. Inspect the report before using outputs.
 The code's synthetic tests do not validate biological results; actual session

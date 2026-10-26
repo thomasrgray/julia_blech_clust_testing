@@ -52,6 +52,7 @@ from lfp_common import (
     normalize_trial_power,
     summarize_normalized_power,
 )
+from lfp_session_labels import canonicalize_stimulus_names
 from validate_LFP_data import (
     format_number, json_default, rejection_reason, validate_dataset)
 
@@ -190,7 +191,7 @@ def process_session(data_dir, region_map):
     # stimulus delivery; the timing is recovered from the data itself.
     dat = ephys_data.ephys_data(data_dir)
     dat.get_lfps()
-    taste_names = get_taste_names_in_lfp_order(dat)
+    taste_names = canonicalize_stimulus_names(get_taste_names_in_lfp_order(dat))
     timing = get_lfp_epoch_timing(dat)
 
     # Step 2: Swap in the cleaned trials from remove_lfp_artifacts.py. This
