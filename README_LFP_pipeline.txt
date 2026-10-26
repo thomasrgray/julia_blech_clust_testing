@@ -230,3 +230,15 @@ Troubleshooting
   A session is missing from the grand average
       -> read the run log: it was either skipped (different epoch/sampling
          rate, all tastes excluded) or listed as failed at the end.
+
+
+Step 5 (optional): GC/PC and within-route statistical comparisons
+--------------------------------------------------------------
+python compare_LFP_spectrograms.py --data-list /path/to/session_list.txt --output-dir /path/to/new_statistics_folder
+
+Produces six GC-vs-PC figures and four GC/PC x retro/ortho figures, with three
+stimulus pairs in each route group. Independent replicates are ANIMALS; sessions
+are averaged within animal. See docs/LFP_spectrogram_statistics.md for commands,
+ID mapping, correction, sample-size limitations, interpretation and citations.
+Methods: Maris & Oostenveld (2007), doi:10.1016/j.jneumeth.2007.03.024.
+Interpretation: Sassenhagen & Draschkow (2019), doi:10.1111/psyp.13335.

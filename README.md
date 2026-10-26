@@ -8,6 +8,21 @@ Python and R based code for clustering and sorting electrophysiology data record
 
 **📚 [Full Documentation](https://katzlabbrandeis.github.io/blech_clust/)** | **🚀 [Getting Started](https://katzlabbrandeis.github.io/blech_clust/getting-started/installation/)** | **📖 [Tutorials](https://katzlabbrandeis.github.io/blech_clust/tutorials/)** | **🔧 [API Reference](https://katzlabbrandeis.github.io/blech_clust/reference/)**
 
+## LFP spectrogram statistical comparisons
+
+After LFP validation and artifact removal, `compare_LFP_spectrograms.py` generates
+six GC-versus-PC figures (BA, IA, S, BK, oIA, oBA) and four within-region/route
+figures (GC retro, GC ortho, PC retro, PC ortho), including all three stimulus
+pairs in each route group. It uses paired animal-level cluster permutation tests
+with correction across time, frequency, and 18 contrasts.
+
+See **[commands, statistical methods, limitations, and citations](docs/LFP_spectrogram_statistics.md)**.
+The method follows [Maris & Oostenveld (2007)](https://doi.org/10.1016/j.jneumeth.2007.03.024);
+interpret cluster localization according to
+[Sassenhagen & Draschkow (2019)](https://doi.org/10.1111/psyp.13335).
+Repeated sessions are averaged within each animal. With six animals the full
+18-comparison correction cannot reach p ≤ .05; the report states this explicitly.
+
 ## ⚠️ Known Issues
 
 **The following methods in the `ephys_data` module are currently failing tests (as of 2026-03-07):**
