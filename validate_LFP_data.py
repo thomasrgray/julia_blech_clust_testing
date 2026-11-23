@@ -812,7 +812,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--data-list", default=DEFAULT_DATA_LIST,
-        help="Text file containing one dataset directory per line.")
+        help="Text file containing one dataset directory per line. If "
+             "neither --data-list nor --dataset is given, a dialog "
+             "asks for a dataset folder or a list file.")
     # --data-dir is the old name of this option, still accepted
     parser.add_argument(
         "--dataset", "--data-dir", action="append", default=[],
@@ -821,7 +823,8 @@ def main():
     args = parser.parse_args()
 
     data_dirs = get_dataset_dirs(args.dataset, args.data_list)
-    source = ", ".join(args.dataset) or args.data_list
+    source = (", ".join(args.dataset) or args.data_list
+              or ", ".join(data_dirs))
 
     print(f"Validating {len(data_dirs)} datasets from {source}")
     failed = []

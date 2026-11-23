@@ -50,12 +50,16 @@ except ModuleNotFoundError:
     import blech_clust.utils.ephys_data.ephys_data as ephys_data
     from blech_clust.utils.ephys_data import lfp_processing
 
-# Defaults for the command-line options of every script. Override them with
-# --data-list / --output-dir; edit them here to change the defaults for all
-# scripts at once.
-DEFAULT_DATA_LIST = "/home/julia-corman/Desktop/Personal_Data/data_dirs_LFP.txt"
-DEFAULT_GRAND_AVERAGE_DIR = (
-    "/home/julia-corman/Desktop/Personal_Data/grand_average_results")
+# Defaults for the command-line options of every script.
+# Sessions: there is no default list. Give --dataset or --data-list on the
+# command line; if neither is given, a dialog asks you to pick a dataset
+# folder or a data-list file (see get_dataset_dirs).
+DEFAULT_DATA_LIST = None
+# Output folder of the grand-average scripts (override with --output-dir).
+# Relative to this repository, so it works on any machine.
+_REPO_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_GRAND_AVERAGE_DIR = os.path.join(
+    _REPO_DIR, "results", "grand_average_results")
 
 # Folder (inside each data directory) written by remove_lfp_artifacts.py
 CLEANED_LFP_FOLDER = "cleaned_LFP_artifacts"
@@ -91,9 +95,76 @@ def read_data_dirs(data_list_path):
         return [line.strip() for line in data_file if line.strip()]
 
 
-def get_dataset_dirs(data_dir_args, data_list_path):
-    """Dataset directories to process: explicit ones if given, else the list."""
-    return list(data_dir_args) or read_data_dirs(data_list_path)
+def get_dataset_dirs(data_dir_args, data_list_path=None):
+    """Dataset directories to process.
+
+    Uses, in order: the folders typed with --dataset, the list file given
+    with --data-list, or - if neither was typed - folders or a list file
+    picked in a dialog (select_dataset_dirs).
+    """
+    if data_dir_args:
+        return list(data_dir_args)
+    if data_list_path:
+        return read_data_dirs(data_list_path)
+    return select_dataset_dirs()
+
+
+def select_dataset_dirs():
+    """Ask in a dialog for dataset folder(s) or a data-list file.
+
+    The first dialog offers a choice between picking dataset folders (one at
+    a time, with "Add another?" after each) and picking a text file with one
+    dataset folder per line. Cancelling exits the script.
+    """
+    no_dialog_hint = (
+        "Give the sessions on the command line instead: --dataset "
+        "/path/to/session (repeatable) or --data-list /path/to/list.txt")
+    try:
+        import easygui
+    except ImportError:
+        raise SystemExit(
+            "No sessions given and easygui is not installed. "
+            + no_dialog_hint)
+
+    folder_choice = "Dataset folder(s)"
+    list_choice = "Data list (.txt)"
+    try:
+        choice = easygui.buttonbox(
+            "No sessions were given on the command line "
+            "(--dataset / --data-list).\n\nWhat would you like to select?",
+            "Select LFP sessions",
+            choices=[folder_choice, list_choice, "Cancel"])
+        if choice == folder_choice:
+            data_dirs = []
+            while True:
+                data_dir = easygui.diropenbox(
+                    "Select a dataset (session) folder",
+                    f"Select dataset folder ({len(data_dirs)} selected so far)",
+                    default=(os.path.dirname(data_dirs[-1])
+                             if data_dirs else None))
+                if data_dir is None:
+                    break
+                data_dirs.append(data_dir)
+                if not easygui.ynbox(
+                        "Selected so far:\n" + "\n".join(data_dirs)
+                        + "\n\nAdd another dataset folder?",
+                        "Add another dataset?"):
+                    break
+        elif choice == list_choice:
+            list_path = easygui.fileopenbox(
+                "Select a text file with one dataset folder per line",
+                "Select data list", default="*.txt", filetypes=["*.txt"])
+            data_dirs = read_data_dirs(list_path) if list_path else []
+        else:
+            data_dirs = []
+    except Exception as error:
+        # e.g. no display available (running over ssh or on a cluster)
+        raise SystemExit(
+            f"Could not open a selection dialog ({error}). " + no_dialog_hint)
+
+    if not data_dirs:
+        raise SystemExit("No sessions selected. " + no_dialog_hint)
+    return data_dirs
 
 
 def get_lfp_epoch_timing(dat):
@@ -270,7 +341,7 @@ def get_taste_names_in_lfp_order(dat):
                     f"{sorted(taste_by_dig_in)})")
             taste_names.append(taste_by_dig_in[dig_in_name])
         else:
-            match = re.search(r"(?:DIN|dig_in)_?(\d+)", dig_in_name,
+            match = re.search(r"(?:DIN|dig_in)[-_]?(\d+)", dig_in_name,
                               flags=re.IGNORECASE)
             if match is None:
                 raise ValueError(

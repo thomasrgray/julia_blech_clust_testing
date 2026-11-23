@@ -70,10 +70,10 @@ Option B - a list file: a plain text file with one session folder per line:
     /full/path/to/session_one
     /full/path/to/session_two
   used with   --data-list /full/path/to/my_list.txt
-If you give neither, the script falls back to a default list file, which is set
-for the original lab user's computer (DEFAULT_DATA_LIST at the top of
-lfp_common.py). On any other computer ALWAYS give --dataset or --data-list, or
-change that line.
+If you give neither, a dialog opens and asks whether to pick dataset folder(s)
+(one at a time, with "Add another?" after each) or a data-list .txt file.
+Without a display (e.g. over ssh) the dialog can't open, so give --dataset or
+--data-list there.
 
 
 THE STEPS - run them in this order

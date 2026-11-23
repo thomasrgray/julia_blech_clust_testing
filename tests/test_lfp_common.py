@@ -176,6 +176,21 @@ class TestTasteNames:
         assert lfp_common.get_taste_names_in_lfp_order(dat) == [
             "water", "salt"]
 
+    def test_legacy_info_maps_board_din_node_names(self, tmp_path):
+        # Intan one-file-per-channel recordings extracted with newer
+        # blech_clust name nodes after the raw file (board-DIN-00.dat), while
+        # older .info files still store only dig_in_nums.
+        dat = self.make_dat(
+            tmp_path,
+            ["board-DIN-00_LFPs", "board-DIN-01_LFPs", "board-DIN-10_LFPs"],
+            [], [])
+        dat.get_info_dict = lambda: setattr(dat, "info_dict", {
+            "taste_params": {
+                "dig_in_nums": [0, 1, 10],
+                "tastes": ["water", "salt", "sucrose"]}})
+        assert lfp_common.get_taste_names_in_lfp_order(dat) == [
+            "water", "salt", "sucrose"]
+
     def test_unknown_dig_in_raises(self, tmp_path):
         dat = self.make_dat(
             tmp_path, ["DIN_9_LFPs"], ["DIN_1"], ["water"])
@@ -226,3 +241,59 @@ class TestLoadCleaned:
         dat = SimpleNamespace(lfp_array_list=[np.zeros((5, 3, 4))] * 3)
         with pytest.raises(ValueError, match="describes 2 tastes"):
             lfp_common.load_cleaned_lfps(dat, data_dir, ["a", "b", "c"])
+
+
+class TestDatasetSelection:
+    """get_dataset_dirs: typed --dataset, then --data-list, then a dialog."""
+
+    @staticmethod
+    def fake_easygui(monkeypatch, choice, folders=(), add_more=(), list_path=None):
+        import sys
+        folders, add_more = list(folders), list(add_more)
+        fake = SimpleNamespace(
+            buttonbox=lambda *a, **k: choice,
+            diropenbox=lambda *a, **k: folders.pop(0) if folders else None,
+            ynbox=lambda *a, **k: add_more.pop(0) if add_more else False,
+            fileopenbox=lambda *a, **k: list_path)
+        monkeypatch.setitem(sys.modules, "easygui", fake)
+
+    def test_typed_datasets_win(self, tmp_path):
+        list_file = tmp_path / "list.txt"
+        list_file.write_text("/from/list\n")
+        assert lfp_common.get_dataset_dirs(
+            ["/typed/a", "/typed/b"], str(list_file)) == ["/typed/a", "/typed/b"]
+
+    def test_typed_list_is_read(self, tmp_path):
+        list_file = tmp_path / "list.txt"
+        list_file.write_text("/s1\n\n  /s2  \n")
+        assert lfp_common.get_dataset_dirs([], str(list_file)) == ["/s1", "/s2"]
+
+    def test_no_default_list(self):
+        assert lfp_common.DEFAULT_DATA_LIST is None
+
+    def test_dialog_picks_folders(self, monkeypatch):
+        self.fake_easygui(monkeypatch, "Dataset folder(s)",
+                          folders=["/s1", "/s2"], add_more=[True, False])
+        assert lfp_common.get_dataset_dirs([], None) == ["/s1", "/s2"]
+
+    def test_dialog_picks_list(self, monkeypatch, tmp_path):
+        list_file = tmp_path / "list.txt"
+        list_file.write_text("/s1\n/s2\n")
+        self.fake_easygui(monkeypatch, "Data list (.txt)",
+                          list_path=str(list_file))
+        assert lfp_common.get_dataset_dirs([], None) == ["/s1", "/s2"]
+
+    def test_dialog_cancel_exits(self, monkeypatch):
+        self.fake_easygui(monkeypatch, "Cancel")
+        with pytest.raises(SystemExit, match="No sessions selected"):
+            lfp_common.get_dataset_dirs([], None)
+
+    def test_dialog_failure_explains_command_line(self, monkeypatch):
+        import sys
+
+        def no_display(*args, **kwargs):
+            raise RuntimeError("no display name")
+        monkeypatch.setitem(sys.modules, "easygui", SimpleNamespace(
+            buttonbox=no_display))
+        with pytest.raises(SystemExit, match="--dataset"):
+            lfp_common.get_dataset_dirs([], None)

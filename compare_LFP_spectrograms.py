@@ -158,7 +158,7 @@ def make_figure(name, conditions, arrays, animals, freq, time, test_mask,
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data-list")
+    parser.add_argument("--data-list", help="Text file with one dataset directory per line; if neither --data-list nor --dataset is given, a dialog asks for one")
     parser.add_argument("--dataset", action="append", default=[])
     parser.add_argument("--animal-map", help="JSON mapping session basename to animal ID")
     parser.add_argument("--output-dir", required=True)
@@ -172,10 +172,10 @@ def main():
         parser.error("Check permutations, alpha, and test window")
     # Lazy imports keep the statistical engine testable without spike-sorting dependencies.
     from grand_average_LFP import collect_session
-    from lfp_common import (get_dataset_dirs, DEFAULT_DATA_LIST,
+    from lfp_common import (get_dataset_dirs,
                             PLOT_MAX_FREQ_HZ, SPECTROGRAM_START_MS, SPECTROGRAM_END_MS)
     paths = [str(Path(p).expanduser()) for p in
-             get_dataset_dirs(args.dataset, args.data_list or DEFAULT_DATA_LIST)]
+             get_dataset_dirs(args.dataset, args.data_list)]
     names = [Path(p).name for p in paths]
     if len(names) != len(set(names)):
         parser.error("Session basenames must be unique; remove duplicate datasets")
