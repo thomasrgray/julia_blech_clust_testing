@@ -546,6 +546,53 @@ class TestLegacyDigInNameMap:
 
         assert data.dig_in_name_map == {"DIN_0": "BA", "DIN_2": "oIA"}
 
+    def test_numeric_dig_in_ids_use_hdf5_node_names(self, tmp_path):
+        # Spike trains named dig_in_X but LFPs named board-DIN-XX, as in
+        # sessions whose LFPs were re-extracted with newer blech_clust.
+        import tables
+        hdf5_path = tmp_path / "session.h5"
+        with tables.open_file(str(hdf5_path), "w") as hf5:
+            hf5.create_group("/", "spike_trains")
+            hf5.create_group("/", "Parsed_LFP")
+            for num in [0, 2]:
+                hf5.create_group("/spike_trains", f"dig_in_{num}")
+                hf5.create_array(
+                    "/Parsed_LFP", f"board-DIN-{num:02d}_LFPs", [0.0])
+        data = ephys_data.__new__(ephys_data)
+        data.hdf5_path = str(hdf5_path)
+        data.info_dict = {"taste_params": {
+            "dig_in_nums": [0, 2], "tastes": ["BA", "oIA"]}}
+
+        data.create_dig_in_name_map()
+
+        assert data.dig_in_name_map == {"dig_in_0": "BA", "dig_in_2": "oIA"}
+        # Any spelling of the same dig-in number finds the taste
+        assert data.dig_in_name_map["board-DIN-02"] == "oIA"
+        assert "board-DIN-00" in data.dig_in_name_map
+        assert "board-DIN-05" not in data.dig_in_name_map
+
+    def test_lfp_names_used_when_no_spike_trains(self, tmp_path):
+        import tables
+        hdf5_path = tmp_path / "session.h5"
+        with tables.open_file(str(hdf5_path), "w") as hf5:
+            hf5.create_group("/", "Parsed_LFP")
+            hf5.create_array("/Parsed_LFP", "board-DIN-00_LFPs", [0.0])
+        data = ephys_data.__new__(ephys_data)
+        data.hdf5_path = str(hdf5_path)
+        data.info_dict = {"taste_params": {
+            "dig_in_nums": [0], "tastes": ["BA"]}}
+
+        data.create_dig_in_name_map()
+
+        assert data.dig_in_name_map == {"board-DIN-00": "BA"}
+
+    def test_same_dig_in_matches_by_number(self):
+        from utils.ephys_data.ephys_data import same_dig_in
+        assert same_dig_in("dig_in_0", "board-DIN-00")
+        assert same_dig_in("DIN_10", "dig_in_10")
+        assert not same_dig_in("dig_in_1", "board-DIN-10")
+        assert not same_dig_in("water", "salt")
+
 
 class TestParsedLfpNodeLoading:
     def test_get_lfps_loads_dig_in_named_arrays(self, tmp_path):

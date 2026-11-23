@@ -215,7 +215,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--data-list", default=DEFAULT_DATA_LIST,
-        help="Text file containing one dataset directory per line.")
+        help="Text file containing one dataset directory per line. If "
+             "neither --data-list nor --dataset is given, a dialog "
+             "asks for a dataset folder or a list file.")
     parser.add_argument(
         "--dataset", action="append", default=[],
         help="Process only this dataset path; may be provided multiple "

@@ -208,6 +208,7 @@ import scipy
 import scipy.signal
 import glob
 import json
+import re
 import easygui
 from joblib import Parallel, delayed, cpu_count
 from tqdm import tqdm
@@ -280,6 +281,54 @@ Installation:
     Required packages can be installed via pip:
     $ pip install numpy scipy tables pandas tqdm matplotlib
 """
+
+
+
+# Dig-ins are named differently depending on the blech_clust version that
+# wrote the file: 'dig_in_0' (older spike trains / LFPs), 'DIN_0', or the
+# Intan file name 'board-DIN-00' (newer LFPs and trial info). Older .info files
+# (version 0.0.3) only store the numbers, so names are matched by number.
+_DIG_IN_NUM_PATTERN = re.compile(r"(?:DIN|dig_in)[-_]?(\d+)", re.IGNORECASE)
+
+
+def dig_in_number(name):
+    """Return the dig-in number in a name such as 'dig_in_0', 'DIN_1' or
+    'board-DIN-00', or None if the name has no dig-in number."""
+    match = _DIG_IN_NUM_PATTERN.search(str(name))
+    return int(match.group(1)) if match else None
+
+
+def same_dig_in(name_a, name_b):
+    """True if two dig-in names are equal or carry the same dig-in number."""
+    if name_a == name_b:
+        return True
+    num_a = dig_in_number(name_a)
+    return num_a is not None and num_a == dig_in_number(name_b)
+
+
+class DigInNameMap(dict):
+    """Dig-in name -> taste mapping that also accepts other spellings of the
+    same dig-in ('dig_in_0' finds 'board-DIN-00'). Used only for older .info
+    files, which give dig-in numbers instead of names."""
+
+    def _resolve(self, key):
+        if dict.__contains__(self, key):
+            return key
+        num = dig_in_number(key)
+        if num is not None:
+            for existing in self:
+                if dig_in_number(existing) == num:
+                    return existing
+        return key
+
+    def __getitem__(self, key):
+        return dict.__getitem__(self, self._resolve(key))
+
+    def __contains__(self, key):
+        return dict.__contains__(self, self._resolve(key))
+
+    def get(self, key, default=None):
+        return dict.get(self, self._resolve(key), default)
 
 
 class ephys_data():
@@ -656,22 +705,60 @@ class ephys_data():
         taste_names = taste_params['tastes']
         taste_dig_ins = taste_params.get('dig_in_names')
 
-        # Older .info files store numeric IDs instead of dig-in names.
-        # Recreate the canonical HDF5/spike-train names used by this module.
-        if taste_dig_ins is None:
+        # Older .info files store numeric IDs instead of dig-in names. Use
+        # the names this session's HDF5 file actually stores for those
+        # numbers (they differ between blech_clust versions), and let lookups
+        # accept any spelling of the same number.
+        legacy_numbers = taste_dig_ins is None
+        if legacy_numbers:
             dig_in_nums = taste_params.get('dig_in_nums')
             if dig_in_nums is None:
                 raise ValueError(
                     "taste_params must contain either 'dig_in_names' or "
                     "'dig_in_nums' to map digital inputs to tastes")
+            hdf5_names = self._hdf5_dig_in_names_by_number()
             taste_dig_ins = [
-                f"dig_in_{int(dig_in_num)}" for dig_in_num in dig_in_nums]
+                hdf5_names.get(int(num), f"dig_in_{int(num)}")
+                for num in dig_in_nums]
 
         if len(taste_dig_ins) != len(taste_names):
             raise ValueError(
                 "taste_params dig-in IDs/names and tastes have different "
                 "lengths")
-        self.dig_in_name_map = dict(zip(taste_dig_ins, taste_names))
+        name_map = dict(zip(taste_dig_ins, taste_names))
+        self.dig_in_name_map = (
+            DigInNameMap(name_map) if legacy_numbers else name_map)
+
+    def _hdf5_dig_in_names_by_number(self):
+        """Map dig-in number -> dig-in name as stored in this session's HDF5.
+
+        Spike-train node names are used first, then parsed LFP node names
+        (without the '_LFPs' suffix). Returns {} if there is no HDF5 file or
+        it cannot be read; the caller then falls back to 'dig_in_<n>'.
+        """
+        hdf5_path = getattr(self, 'hdf5_path', None)
+        if not hdf5_path or not os.path.exists(hdf5_path):
+            return {}
+        names = {}
+        try:
+            with tables.open_file(hdf5_path, 'r') as hf5:
+                for group in ['/Parsed_LFP', '/spike_trains']:
+                    if group not in hf5:
+                        continue
+                    for node in hf5.list_nodes(group):
+                        name = node._v_name
+                        if name.endswith('_LFPs'):
+                            name = name[:-len('_LFPs')]
+                        num = dig_in_number(name)
+                        if num is not None:
+                            # Later groups win, so spike-train names take
+                            # precedence over LFP names.
+                            names[num] = name
+        except (OSError, ValueError, tables.exceptions.HDF5ExtError) as error:
+            warnings.warn(
+                f"Could not read dig-in names from {hdf5_path}: {error}")
+            return {}
+        return names
 
     def get_spikes(self):
         """Extract spike arrays from HDF5 file
@@ -1101,7 +1188,11 @@ class ephys_data():
         self.palatability_ranks = self.info_dict['taste_params']['pal_rankings']
 
         # Get digital input information from info_dict to ensure correct mapping
-        taste_dig_in_names = self.info_dict['taste_params']['dig_in_names']
+        # Older .info files have no dig_in_names; dig_in_name_map was then
+        # built from dig_in_nums in the same order as the tastes.
+        taste_dig_in_names = (
+            self.info_dict['taste_params'].get('dig_in_names')
+            or list(self.dig_in_name_map.keys()))
 
         # Create a mapping from dig_in names to indices in the taste arrays
         dig_in_to_index = {dig_in: i for i,
@@ -1830,7 +1921,7 @@ class ephys_data():
             # Find taste_ind by matching dig_in_name_taste to dig_in_name_map values
             taste_ind = None
             for idx, node in enumerate(self.dig_in_node_list):
-                if node == this_row['dig_in_name_taste']:
+                if same_dig_in(node, this_row['dig_in_name_taste']):
                     taste_ind = idx
                     break
             if taste_ind is None:
@@ -1888,7 +1979,7 @@ class ephys_data():
             # Find taste_ind by matching dig_in_name_taste to dig_in_name_map values
             taste_ind = None
             for idx, node in enumerate(self.dig_in_node_list):
-                if node == this_row['dig_in_name_taste']:
+                if same_dig_in(node, this_row['dig_in_name_taste']):
                     taste_ind = idx
                     break
             if taste_ind is None:
